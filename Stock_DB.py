@@ -178,21 +178,28 @@ class StockDB:
     return df
 
   #更新公司基本資料, 預設只會加入新上市的公司, 若將參數all設為Ture則全部更新
-  def renew_company(self, all=False):
+def renew_company(self, all=False):
     df_old = self.get("公司", '股號,股名,產業別')
-    if all or df_old.empty: # 先刪除全部, 再重新讀取
-      self.conn.execute("DELETE FROM 公司")
-      df = self.stock_name()
-      print('更新所有的公司：', df)
+    if all or df_old.empty: 
+        self.conn.execute("DELETE FROM 公司")
+        df = self.stock_name()
+        print('更新所有的公司：', df)
     else:
-      df_new = self.stock_name()
-      mask = df_new['股號'].isin(df_old['股號']) # 建立在new存在,在old也存在的遮罩
-      df = df_new[~mask] #反轉遮罩, 取出在new有在old沒有的資料
-      print('要更新的公司：', df)
+        df_new = self.stock_name()
+        mask = df_new['股號'].isin(df_old['股號'])
+        df = df_new[~mask]
+        print('要更新的公司：', df)
 
-    for id,name,industry in zip(df['股號'],df['股名'],df['產業別']):
-      try:
-        stock = yf.Ticker(id+".TW")
+    for id, name, industry in zip(df['股號'], df['股名'], df['產業別']):
+        try:
+            # 根据股票所在市場选择正确的代码格式
+            if 'strMode=2' in self.stock_name_url:  # 上市
+                stock_code = id + ".TW"
+            elif 'strMode=4' in self.stock_name_url:  # 上櫃
+                stock_code = id + "TWO"
+
+            stock = yf.Ticker(stock_code)
+            # ... 后续代码
         if not 'sharesOutstanding' in stock.info:
           stock_sharesOutstanding = None
         else:
