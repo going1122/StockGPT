@@ -145,64 +145,63 @@ class StockDB:
   #讀取最近一天所有股票的日頻資料, 以取得最新的股號及股名清單
   #欄位："股號","股名","成交量","成交金額","開盤價","最高價","最低價","收盤價","漲跌價差","成交筆數"
 
-  # 上市櫃股票
-
+  # 上市股票
   def stock_name(self):
+    # print(self.ids)
     if self.ids is not None:
-        return self.ids
+      return self.ids
     print("線上讀取股號、股名、及產業別")
-
-    urls = [
-        'https://isin.twse.com.tw/isin/C_public.jsp?strMode=2',  # 上市
-        'https://isin.twse.com.tw/isin/C_public.jsp?strMode=4'   # 上櫃
-    ]
-
-    data = []
-    for url in urls:
-        response = requests.get(url)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        stock_company = soup.find_all('tr')
-        for i in stock_company[2:]:
-            j = i.find_all('td')
-            l = j[0].text.split('\u3000')
-            if len(l[0].strip()) == 4:
-                stock_id, stock_name = l
-                industry = j[4].text.strip()
-                market_type = 'TW' if 'strMode=2' in url else 'TWO'
-                data.append([stock_id.strip(), stock_name, industry, market_type])
-
-    df = pd.DataFrame(data, columns=['股號', '股名', '產業別', '市場類型'])
+    data=[]
+    response=requests.get('https://isin.twse.com.tw/isin/C_public.jsp?strMode=2')
+    url_data=BeautifulSoup(response.text, 'html.parser')
+    stock_company=url_data.find_all('tr')
+    for i in stock_company[2:]:
+        j=i.find_all('td')
+        l=j[0].text.split('\u3000')
+        if len(l[0].strip()) == 4:
+            stock_id,stock_name = l
+            industry = j[4].text.strip()
+            data.append([stock_id.strip(),stock_name,industry])
+        else:
+            break
+    df = pd.DataFrame(data, columns=['股號','股名','產業別'])
     self.ids = df
     return df
 
   #更新公司基本資料, 預設只會加入新上市的公司, 若將參數all設為Ture則全部更新
   def renew_company(self, all=False):
     df_old = self.get("公司", '股號,股名,產業別')
-    if all or df_old.empty: 
-        self.conn.execute("DELETE FROM 公司")
-        df = self.stock_name()
-        print('更新所有的公司：', df)
+    if all or df_old.empty: # 先刪除全部, 再重新讀取
+      self.conn.execute("DELETE FROM 公司")
+      df = self.stock_name()
+      print('更新所有的公司：', df)
     else:
-        df_new = self.stock_name()
-        mask = df_new['股號'].isin(df_old['股號'])
-        df = df_new[~mask]
-        print('要更新的公司：', df)
+      df_new = self.stock_name()
+      mask = df_new['股號'].isin(df_old['股號']) # 建立在new存在,在old也存在的遮罩
+      df = df_new[~mask] #反轉遮罩, 取出在new有在old沒有的資料
+      print('要更新的公司：', df)
 
+    df = self.stock_name()
     for id, name, industry, market_type in zip(df['股號'], df['股名'], df['產業別'], df['市場類型']):
         try:
-            stock_code = id + ".TW" if market_type == 'TW' else id + "TWO"
+            stock_code = f"{id}.{market_type}"
             stock = yf.Ticker(stock_code)
-
-            # 檢查 'sharesOutstanding' 和 'marketCap' 是否存在於股票資訊中
-            stock_sharesOutstanding = stock.info.get('sharesOutstanding', None)
-            stock_marketCap = stock.info.get('marketCap', None)
-
-            self.conn.execute("INSERT INTO 公司 values(?,?,?,?,?)",
-                      (id, name, industry, stock_sharesOutstanding, stock_marketCap))
-            self.conn.commit()
-        except Exception as e:
-            print(f"Error processing {id}: {e}")
-
+            
+        if not 'sharesOutstanding' in stock.info:
+          stock_sharesOutstanding = None
+        else:
+          stock_sharesOutstanding=stock.info['sharesOutstanding']
+        if not 'marketCap' in stock.info:
+          stock_marketCap = None
+        else:
+          stock_marketCap=stock.info['marketCap']
+  
+        self.conn.execute("INSERT INTO 公司 values(?,?,?,?,?)",
+                  (id,name,industry,stock_sharesOutstanding,stock_marketCap))
+        self.conn.commit()
+        # print(id)
+      except:
+        pass
 
   def quarter_to_int(self, year, quarter):
     quarter_dict = {"Q1": 1, "Q2": 2, "Q3": 3, "Q4": 4}
@@ -237,20 +236,11 @@ class StockDB:
       #更新季頻資料表
       print('更新季頻')
       
-
       df = self.stock_name()
-      for id, name, industry, market_type in zip(df['股號'], df['股名'], df['產業別'], df['市場類型']):
-          # 根據市場類型選擇正確的 URL
-          if market_type == 'TW':
-              stock_suffix = '.TW'
-          elif market_type == 'TWO':
-              stock_suffix = '.TWO'
-
-        # 更新 URL 以包含正確的後綴
-        url = [
-            f'https://tw.stock.yahoo.com/quote/{id}{stock_suffix}/income-statement',
-            f'https://tw.stock.yahoo.com/quote/{id}{stock_suffix}/eps'
-        ]
+      for id, name in zip(df['股號'],df['股名']):
+          df_data=[]
+          url = [f'https://tw.stock.yahoo.com/quote/{id}.TW/income-statement',
+                  f'https://tw.stock.yahoo.com/quote/{id}.TW/eps']
           df = self.url_find(url[0])
           print(id)
           df = df.transpose()
@@ -311,14 +301,22 @@ class StockDB:
   # 日頻股價資料
   def stock_price(self, stock_list, start_date):
     # 下載資料
-    df = yf.download(stock_list, start_date)
+    updated_stock_list = []
+    for stock_id in stock_list:
+        # 從股票名單 DataFrame 中獲取市場類型
+        market_type = self.name_df.set_index('股號').loc[stock_id, '市場類型']
+        # 根據市場類型決定後綴
+        updated_stock_id = f"{stock_id}.TW" if market_type == 'TW' else f"{stock_id}.TWO"
+        updated_stock_list.append(updated_stock_id)
 
-    if len(df) > 0: # 如果有下載到資料
+    df = yf.download(updated_stock_list, start=start_date)
+
+    if len(df) > 0:  # 如果有下載到資料
         # 轉換資料
         data_list = []
-        for stock in stock_list:
+        for stock in updated_stock_list:
             stock_df = df.xs(stock, axis=1, level=1).copy()
-            stock_df['Stock_Id'] = stock  # 保留原始的股票代碼
+            stock_df['Stock_Id'] = stock
             data_list.append(stock_df)
 
         yf_df = pd.concat(data_list).reset_index()
@@ -326,12 +324,13 @@ class StockDB:
         # 重新排列欄位
         yf_df = yf_df[['Date', 'Stock_Id', 'Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume']]
         yf_df.rename(columns={  # 修改欄位名稱以便對應到資料表
-            'Stock_Id':'股號','Date':'日期','Open':'開盤價','High':'最高價','Low':'最低價',
-            'Close':'收盤價', 'Adj Close':'還原價','Volume':'成交量',}, inplace=True)
-        # ↓將TimeStamp資料改為如 "2022-02-03" 的字串
+            'Stock_Id': '股號', 'Date': '日期', 'Open': '開盤價', 'High': '最高價', 'Low': '最低價',
+            'Close': '收盤價', 'Adj Close': '還原價', 'Volume': '成交量'}, inplace=True)
+        # 將 TimeStamp 資料改為 "YYYY-MM-DD" 的字串
         yf_df['日期'] = yf_df['日期'].dt.strftime('%Y-%m-%d')
 
         return yf_df
+
 
   # 進階日頻資料下載
   def stock_advanced(self, date):
@@ -392,13 +391,11 @@ class StockDB:
       start_date = next_day.strftime('%Y-%m-%d') # 格式化日期為 "2020-02-23" 格式的字串
 
     print("開始日期：", start_date)
-    # 要更新的股票代碼，包括市場類型後綴
-    df_stock_names = self.stock_name()
-    stock_list = df_stock_names['股號'] + '.' + df_stock_names['市場類型']
+    # 要更新的股票代碼
+    stock_list = (self.stock_name()['股號'] + '.TW').tolist()
 
     # 先取得股價資料
     base_df = self.stock_price(stock_list, start_date)
-
     # 交易日期
     date_list = base_df['日期'].str.replace('-', '')
     date_list = date_list.unique().tolist()
@@ -418,6 +415,7 @@ class StockDB:
     final_df = pd.merge(base_df, advance_df, on=['日期', '股號'], how='inner')
     print(final_df)
     final_df.to_sql('日頻', self.conn, if_exists='append', index=False)
+
 
   # 顯示所有資料表的結構及索引資訊
   def table_info(self):
