@@ -188,31 +188,21 @@ class StockDB:
         df = df_new[~mask]
         print('要更新的公司：', df)
 
-    for id, name, industry in zip(df['股號'], df['股名'], df['產業別']):
+    for id, name, industry, market_type in zip(df['股號'], df['股名'], df['產業別'], df['市場類型']):
         try:
-            # 根据股票所在市場选择正确的代码格式
-            if 'strMode=2' in self.stock_name_url:  # 上市
-                stock_code = id + ".TW"
-            elif 'strMode=4' in self.stock_name_url:  # 上櫃
-                stock_code = id + "TWO"
-
+            stock_code = id + ".TW" if market_type == 'TW' else id + "TWO"
             stock = yf.Ticker(stock_code)
-            # ... 后续代码
-        if not 'sharesOutstanding' in stock.info:
-          stock_sharesOutstanding = None
-        else:
-          stock_sharesOutstanding=stock.info['sharesOutstanding']
-        if not 'marketCap' in stock.info:
-          stock_marketCap = None
-        else:
-          stock_marketCap=stock.info['marketCap']
-  
-        self.conn.execute("INSERT INTO 公司 values(?,?,?,?,?)",
-                  (id,name,industry,stock_sharesOutstanding,stock_marketCap))
-        self.conn.commit()
-        # print(id)
-      except:
-        pass
+
+            # 檢查 'sharesOutstanding' 和 'marketCap' 是否存在於股票資訊中
+            stock_sharesOutstanding = stock.info.get('sharesOutstanding', None)
+            stock_marketCap = stock.info.get('marketCap', None)
+
+            self.conn.execute("INSERT INTO 公司 values(?,?,?,?,?)",
+                      (id, name, industry, stock_sharesOutstanding, stock_marketCap))
+            self.conn.commit()
+        except Exception as e:
+            print(f"Error processing {id}: {e}")
+
 
   def quarter_to_int(self, year, quarter):
     quarter_dict = {"Q1": 1, "Q2": 2, "Q3": 3, "Q4": 4}
