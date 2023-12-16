@@ -9,66 +9,59 @@ import os
 import datetime as dt
 from bs4 import BeautifulSoup
 import pandas as pd
+
 class StockInfo():
-  # 取得全部股票的股號、股名
-  def stock_name(self):
-    # print("線上讀取股號、股名、及產業別")
-    response = requests.get('https://isin.twse.com.tw/isin/C_public.jsp?strMode=2')
-    url_data = BeautifulSoup(response.text, 'html.parser')
-    stock_company = url_data.find_all('tr')
-  
-    # 資料處理
-    data = [
-        (row.find_all('td')[0].text.split('\u3000')[0].strip(),
-          row.find_all('td')[0].text.split('\u3000')[1],
-          row.find_all('td')[4].text.strip())
-        for row in stock_company[2:] if len(row.find_all('td')[0].text.split('\u3000')[0].strip()) == 4
-    ]
-  
-    df = pd.DataFrame(data, columns=['股號', '股名', '產業別'])
-  
-    return df
+    # 取得全部股票的股號、股名
+    def stock_name(self):
+        data = []
+        for market_type, str_mode in [('TW', '2'), ('TWO', '4')]:
+            response = requests.get(f'https://isin.twse.com.tw/isin/C_public.jsp?strMode={str_mode}')
+            soup = BeautifulSoup(response.text, 'html.parser')
+            stock_company = soup.find_all('tr')
+            for row in stock_company[2:]:
+                if len(row.find_all('td')[0].text.split('\u3000')[0].strip()) == 4:
+                    stock_id, stock_name = row.find_all('td')[0].text.split('\u3000')[:2]
+                    industry = row.find_all('td')[4].text.strip()
+                    data.append([stock_id.strip(), stock_name, industry, market_type])
+
+        df = pd.DataFrame(data, columns=['股號', '股名', '產業別', '市場類型'])
+        return df
+
   # 取得股票名稱
   def get_stock_name(self, stock_id, name_df):
       return name_df.set_index('股號').loc[stock_id, '股名']
 
+import yfinance as yf
+import numpy as np
+import datetime as dt
+
 class StockAnalysis():
-  def __init__(self,openai_api_key):
-    # 初始化 OpenAI API 金鑰
-    self.client = OpenAI(api_key=openai_api_key)
-    self.stock_info = StockInfo()  # 實例化 StockInfo 類別
-    self.name_df = self.stock_info.stock_name()
-  # 從 yfinance 取得一周股價資料
-  def stock_price(self, stock_id="大盤", days = 15):
-    if stock_id == "大盤":
-      stock_id="^TWII"
-    else:
-      stock_id += ".TW"
-  
-    end = dt.date.today() # 資料結束時間
-    start = end - dt.timedelta(days=days) # 資料開始時間
-    # 下載資料
-    df = yf.download(stock_id, start=start)
-  
-    # 更換列名
-    df.columns = ['開盤價', '最高價', '最低價',
-                  '收盤價', '調整後收盤價', '成交量']
-  
-    data = {
-      '日期': df.index.strftime('%Y-%m-%d').tolist(),
-      '收盤價': df['收盤價'].tolist(),
-      '每日報酬': df['收盤價'].pct_change().tolist(),
-      # '漲跌價差': df['調整後收盤價'].diff().tolist()
-      }
-  
-    return data
-  # 基本面資料
-  def stock_fundamental(self, stock_id= "大盤"):
-    if stock_id == "大盤":
-        return None
-  
-    stock_id += ".TW"
-    stock = yf.Ticker(stock_id)
+    def __init__(self, openai_api_key):
+        # 初始化 OpenAI API 金鑰
+        self.client = OpenAI(api_key=openai_api_key)
+        self.stock_info = StockInfo()  # 實例化 StockInfo 類別
+        self.name_df = self.stock_info.stock_name()
+
+    def stock_price(self, stock_id="大盤", days=15):
+        if stock_id == "大盤":
+            stock_id = "^TWII"
+        else:
+            stock_id = f"{stock_id}.TW" if self.name_df.set_index('股號').loc[stock_id, '市場類型'] == 'TW' else f"{stock_id}.TWO"
+        # 下載資料
+        end = dt.date.today()
+        start = end - dt.timedelta(days=days)
+        df = yf.download(stock_id, start=start)
+        # 更換列名
+        df.columns = ['開盤價', '最高價', '最低價', '收盤價', '調整後收盤價', '成交量']
+        return df
+
+    def stock_fundamental(self, stock_id="大盤"):
+        if stock_id == "大盤":
+            return None
+        else:
+            stock_id = f"{stock_id}.TW" if self.name_df.set_index('股號').loc[stock_id, '市場類型'] == 'TW' else f"{stock_id}.TWO"
+        stock = yf.Ticker(stock_id)
+        # 省略後續處理...
   
     # 營收成長率
     quarterly_revenue_growth = np.round(stock.quarterly_financials.loc["Total Revenue"].pct_change(-1).dropna().tolist(), 2)
