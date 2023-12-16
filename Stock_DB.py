@@ -147,26 +147,33 @@ class StockDB:
 
   # 上市股票
   def stock_name(self):
-    # print(self.ids)
     if self.ids is not None:
-      return self.ids
+        return self.ids
     print("線上讀取股號、股名、及產業別")
-    data=[]
-    response=requests.get('https://isin.twse.com.tw/isin/C_public.jsp?strMode=2')
-    url_data=BeautifulSoup(response.text, 'html.parser')
-    stock_company=url_data.find_all('tr')
-    for i in stock_company[2:]:
-        j=i.find_all('td')
-        l=j[0].text.split('\u3000')
-        if len(l[0].strip()) == 4:
-            stock_id,stock_name = l
-            industry = j[4].text.strip()
-            data.append([stock_id.strip(),stock_name,industry])
-        else:
-            break
-    df = pd.DataFrame(data, columns=['股號','股名','產業別'])
+
+    urls = [
+        'https://isin.twse.com.tw/isin/C_public.jsp?strMode=2',  # 上市
+        'https://isin.twse.com.tw/isin/C_public.jsp?strMode=4'   # 上櫃
+    ]
+
+    data = []
+    for url in urls:
+        response = requests.get(url)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        stock_company = soup.find_all('tr')
+        for i in stock_company[2:]:
+            j = i.find_all('td')
+            l = j[0].text.split('\u3000')
+            if len(l[0].strip()) == 4:
+                stock_id, stock_name = l
+                industry = j[4].text.strip()
+                market_type = 'TW' if 'strMode=2' in url else 'TWO'
+                data.append([stock_id.strip(), stock_name, industry, market_type])
+
+    df = pd.DataFrame(data, columns=['股號', '股名', '產業別', '市場類型'])
     self.ids = df
     return df
+
 
   #更新公司基本資料, 預設只會加入新上市的公司, 若將參數all設為Ture則全部更新
   def renew_company(self, all=False):
