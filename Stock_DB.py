@@ -146,13 +146,12 @@ class StockDB:
   #欄位："股號","股名","成交量","成交金額","開盤價","最高價","最低價","收盤價","漲跌價差","成交筆數"
 
   # 上市櫃股票
+
   def stock_name(self):
-    # print(self.ids)
     if self.ids is not None:
         return self.ids
     print("線上讀取股號、股名、及產業別")
 
-    # 兩個網址：上市和上櫃公司
     urls = [
         'https://isin.twse.com.tw/isin/C_public.jsp?strMode=2',  # 上市
         'https://isin.twse.com.tw/isin/C_public.jsp?strMode=4'   # 上櫃
@@ -169,16 +168,15 @@ class StockDB:
             if len(l[0].strip()) == 4:
                 stock_id, stock_name = l
                 industry = j[4].text.strip()
-                data.append([stock_id.strip(), stock_name, industry])
-            else:
-                break
+                market_type = 'TW' if 'strMode=2' in url else 'TWO'
+                data.append([stock_id.strip(), stock_name, industry, market_type])
 
-    df = pd.DataFrame(data, columns=['股號', '股名', '產業別'])
+    df = pd.DataFrame(data, columns=['股號', '股名', '產業別', '市場類型'])
     self.ids = df
     return df
 
   #更新公司基本資料, 預設只會加入新上市的公司, 若將參數all設為Ture則全部更新
-def renew_company(self, all=False):
+  def renew_company(self, all=False):
     df_old = self.get("公司", '股號,股名,產業別')
     if all or df_old.empty: 
         self.conn.execute("DELETE FROM 公司")
