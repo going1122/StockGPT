@@ -145,26 +145,35 @@ class StockDB:
   #讀取最近一天所有股票的日頻資料, 以取得最新的股號及股名清單
   #欄位："股號","股名","成交量","成交金額","開盤價","最高價","最低價","收盤價","漲跌價差","成交筆數"
 
-  # 上市股票
+  # 上市櫃股票
   def stock_name(self):
     # print(self.ids)
     if self.ids is not None:
-      return self.ids
+        return self.ids
     print("線上讀取股號、股名、及產業別")
-    data=[]
-    response=requests.get('https://isin.twse.com.tw/isin/C_public.jsp?strMode=2')
-    url_data=BeautifulSoup(response.text, 'html.parser')
-    stock_company=url_data.find_all('tr')
-    for i in stock_company[2:]:
-        j=i.find_all('td')
-        l=j[0].text.split('\u3000')
-        if len(l[0].strip()) == 4:
-            stock_id,stock_name = l
-            industry = j[4].text.strip()
-            data.append([stock_id.strip(),stock_name,industry])
-        else:
-            break
-    df = pd.DataFrame(data, columns=['股號','股名','產業別'])
+
+    # 兩個網址：上市和上櫃公司
+    urls = [
+        'https://isin.twse.com.tw/isin/C_public.jsp?strMode=2',  # 上市
+        'https://isin.twse.com.tw/isin/C_public.jsp?strMode=4'   # 上櫃
+    ]
+
+    data = []
+    for url in urls:
+        response = requests.get(url)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        stock_company = soup.find_all('tr')
+        for i in stock_company[2:]:
+            j = i.find_all('td')
+            l = j[0].text.split('\u3000')
+            if len(l[0].strip()) == 4:
+                stock_id, stock_name = l
+                industry = j[4].text.strip()
+                data.append([stock_id.strip(), stock_name, industry])
+            else:
+                break
+
+    df = pd.DataFrame(data, columns=['股號', '股名', '產業別'])
     self.ids = df
     return df
 
