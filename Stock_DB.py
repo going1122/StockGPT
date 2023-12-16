@@ -237,11 +237,20 @@ class StockDB:
       #更新季頻資料表
       print('更新季頻')
       
+
       df = self.stock_name()
-      for id, name in zip(df['股號'],df['股名']):
-          df_data=[]
-          url = [f'https://tw.stock.yahoo.com/quote/{id}.TW/income-statement',
-                  f'https://tw.stock.yahoo.com/quote/{id}.TW/eps']
+      for id, name, industry, market_type in zip(df['股號'], df['股名'], df['產業別'], df['市場類型']):
+          # 根據市場類型選擇正確的 URL
+          if market_type == 'TW':
+              stock_suffix = '.TW'
+          elif market_type == 'TWO':
+              stock_suffix = '.TWO'
+
+        # 更新 URL 以包含正確的後綴
+        url = [
+            f'https://tw.stock.yahoo.com/quote/{id}{stock_suffix}/income-statement',
+            f'https://tw.stock.yahoo.com/quote/{id}{stock_suffix}/eps'
+        ]
           df = self.url_find(url[0])
           print(id)
           df = df.transpose()
