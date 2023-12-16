@@ -318,7 +318,7 @@ class StockDB:
         data_list = []
         for stock in stock_list:
             stock_df = df.xs(stock, axis=1, level=1).copy()
-            stock_df['Stock_Id'] = stock.replace('.TW', '')
+            stock_df['Stock_Id'] = stock  # 保留原始的股票代碼
             data_list.append(stock_df)
 
         yf_df = pd.concat(data_list).reset_index()
@@ -392,11 +392,13 @@ class StockDB:
       start_date = next_day.strftime('%Y-%m-%d') # 格式化日期為 "2020-02-23" 格式的字串
 
     print("開始日期：", start_date)
-    # 要更新的股票代碼
-    stock_list = (self.stock_name()['股號'] + '.TW').tolist()
+    # 要更新的股票代碼，包括市場類型後綴
+    df_stock_names = self.stock_name()
+    stock_list = df_stock_names['股號'] + '.' + df_stock_names['市場類型']
 
     # 先取得股價資料
     base_df = self.stock_price(stock_list, start_date)
+
     # 交易日期
     date_list = base_df['日期'].str.replace('-', '')
     date_list = date_list.unique().tolist()
@@ -416,7 +418,6 @@ class StockDB:
     final_df = pd.merge(base_df, advance_df, on=['日期', '股號'], how='inner')
     print(final_df)
     final_df.to_sql('日頻', self.conn, if_exists='append', index=False)
-
 
   # 顯示所有資料表的結構及索引資訊
   def table_info(self):
